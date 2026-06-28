@@ -1,0 +1,87 @@
+name: Check Bootlin, Buildroot, LLVM, and SPIR-V Updates
+
+on:
+  schedule:
+    - cron: '0 1 * * *' # Every day at 04:00 GMT+3 (01:00 UTC)
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Latest Upstream Versions
+        id: upstream
+        run: |
+          # Fetch the latest stable Buildroot tag (excluding release candidates, looking for tags like 2026.02.3)
+          LATEST_BUILDROOT=$(curl -fsSL https://api.github.com/repos/buildroot/buildroot/tags | jq -r '.[].name' | grep -E '^[0-9]{4}\.[0-9]{2}(\.[0-9]+)?$' | head -n 1)
+          echo "LATEST_BUILDROOT=$LATEST_BUILDROOT" >> $GITHUB_OUTPUT
+          echo "Latest stable Buildroot tag: $LATEST_BUILDROOT"
+
+          # Fetch the latest stable Bootlin release version (stable-X.Y-Z)
+          LATEST_BOOTLIN=$(curl -fsSL https://toolchains.bootlin.com/releases.html | grep -oE "stable-[0-9]{4}\.[0-9]{2}-[0-9]+" | head -n 1 | sed 's/stable-//')
+          echo "LATEST_BOOTLIN=$LATEST_BOOTLIN" >> $GITHUB_OUTPUT
+          echo "Latest stable Bootlin release: $LATEST_BOOTLIN"
+
+          # Fetch the latest stable LLVM release version (looking for tags like llvmorg-22.1.8)
+          LATEST_LLVM=$(curl -fsSL https://api.github.com/repos/llvm/llvm-project/releases | jq -r '.[].tag_name' | grep -E '^llvmorg-[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 | sed 's/llvmorg-//')
+          echo "LATEST_LLVM=$LATEST_LLVM" >> $GITHUB_OUTPUT
+          echo "Latest stable LLVM version: $LATEST_LLVM"
+
+          # Fetch the latest commit SHA of the matching SPIRV-LLVM-Translator release branch
+          LLVM_MAJOR=$(echo "$LATEST_LLVM" | cut -d. -f1)
+          LATEST_SPIRV_FULL_SHA=$(git ls-remote https://github.com/KhronosGroup/SPIRV-LLVM-Translator.git refs/heads/llvm_release_${LLVM_MAJOR}0 | cut -f1)
+          LATEST_SPIRV_SHA=${LATEST_SPIRV_FULL_SHA:0:7}
+          echo "LATEST_SPIRV_SHA=$LATEST_SPIRV_SHA" >> $GITHUB_OUTPUT
+          echo "Latest stable SPIR-V translator SHA: $LATEST_SPIRV_SHA"
+
+      - name: Fetch Our Latest Release Info
+        id: our-release
+        run: |
+          # Query GitHub for the latest release tag in this repo
+          LATEST_OURS=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r '.tag_name' || echo "none")
+          echo "Our latest release tag: $LATEST_OURS"
+          
+          # Parse the tag using regex (format: v<buildroot>-bootlin<bootlin>-llvm<llvm>-spirv<spirv>)
+          if [[ "$LATEST_OURS" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-bootlin([0-9]+\.[0-9]+-[0-9]+)-llvm([0-9]+\.[0-9]+\.[0-9]+)-spirv([a-f0-9]+)$ ]]; then
+            OUR_BUILDROOT="${BASH_REMATCH[1]}"
+            OUR_BOOTLIN="${BASH_REMATCH[2]}"
+            OUR_LLVM="${BASH_REMATCH[3]}"
+            OUR_SPIRV_SHA="${BASH_REMATCH[4]}"
+          else
+            OUR_BUILDROOT="none"
+            OUR_BOOTLIN="none"
+            OUR_LLVM="none"
+            OUR_SPIRV_SHA="none"
+          fi
+          
+          echo "OUR_BUILDROOT=$OUR_BUILDROOT" >> $GITHUB_OUTPUT
+          echo "OUR_BOOTLIN=$OUR_BOOTLIN" >> $GITHUB_OUTPUT
+          echo "OUR_LLVM=$OUR_LLVM" >> $GITHUB_OUTPUT
+          echo "OUR_SPIRV_SHA=$OUR_SPIRV_SHA" >> $GITHUB_OUTPUT
+          
+          echo "Our parsed Buildroot: $OUR_BUILDROOT"
+          echo "Our parsed Bootlin: $OUR_BOOTLIN"
+          echo "Our parsed LLVM: $OUR_LLVM"
+          echo "Our parsed SPIR-V SHA: $OUR_SPIRV_SHA"
+
+      - name: Trigger Rebuild if Upstream Updated
+        if: |
+          (steps.upstream.outputs.LATEST_BUILDROOT != steps.our-release.outputs.OUR_BUILDROOT) ||
+          (steps.upstream.outputs.LATEST_BOOTLIN != steps.our-release.outputs.OUR_BOOTLIN) ||
+          (steps.upstream.outputs.LATEST_LLVM != steps.our-release.outputs.OUR_LLVM) ||
+          (steps.upstream.outputs.LATEST_SPIRV_SHA != steps.our-release.outputs.OUR_SPIRV_SHA)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'build-toolchain.yml',
+              ref: 'main',
+              inputs: {
+                buildroot_version: '${{ steps.upstream.outputs.LATEST_BUILDROOT }}',
+                bootlin_version: '${{ steps.upstream.outputs.LATEST_BOOTLIN }}',
+                llvm_version: '${{ steps.upstream.outputs.LATEST_LLVM }}'
+              }
+            })
+            console.log("Triggered build for Buildroot ${{ steps.upstream.outputs.LATEST_BUILDROOT }}, Bootlin ${{ steps.upstream.outputs.LATEST_BOOTLIN }}, LLVM ${{ steps.upstream.outputs.LATEST_LLVM }}");
