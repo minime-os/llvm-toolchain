@@ -19,6 +19,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
@@ -39,9 +41,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake ninja-build python3-dev xz-utils curl ccache
 
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ github.event.inputs.llvm_version }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-${{ github.event.inputs.llvm_version }}-
+
       - name: Download Bootlin Toolchain
         run: |
-          mkdir -p /opt/toolchain
+          sudo mkdir -p /opt/toolchain
+          sudo chown runner:runner /opt/toolchain
           curl -fsSL "https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--musl--stable-${{ github.event.inputs.bootlin_version }}.tar.xz" | tar -xJ --strip-components=1 -C /opt/toolchain
 
       - name: Clone LLVM Project
@@ -67,6 +78,8 @@ jobs:
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=/opt/toolchain \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DLLVM_ENABLE_PROJECTS="clang;lld" \
             -DLLVM_TARGETS_TO_BUILD="AArch64;X86" \
             -DLLVM_DEFAULT_TARGET_TRIPLE="aarch64-buildroot-linux-musl" \
@@ -83,6 +96,8 @@ jobs:
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=/opt/toolchain \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DLLVM_DIR=/opt/toolchain/lib/cmake/llvm
           ninja -C SPIRV-LLVM-Translator/build-host install
 
@@ -110,6 +125,8 @@ jobs:
             -DCMAKE_SYSTEM_PROCESSOR=AArch64 \
             -DCMAKE_C_COMPILER=/opt/toolchain/bin/aarch64-linux-gcc \
             -DCMAKE_CXX_COMPILER=/opt/toolchain/bin/aarch64-linux-g++ \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_SYSROOT=/opt/toolchain/aarch64-buildroot-linux-musl/sysroot \
             -DLLVM_TABLEGEN=/opt/toolchain/bin/llvm-tblgen \
             -DCLANG_TABLEGEN=/opt/toolchain/bin/clang-tblgen \
@@ -138,6 +155,8 @@ jobs:
             -DCMAKE_SYSTEM_PROCESSOR=AArch64 \
             -DCMAKE_C_COMPILER=/opt/toolchain/bin/aarch64-linux-gcc \
             -DCMAKE_CXX_COMPILER=/opt/toolchain/bin/aarch64-linux-g++ \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_SYSROOT=/opt/toolchain/aarch64-buildroot-linux-musl/sysroot \
             -DLLVM_DIR=/opt/toolchain/aarch64-buildroot-linux-musl/sysroot/usr/lib/cmake/llvm
           ninja -C SPIRV-LLVM-Translator/build-target install
