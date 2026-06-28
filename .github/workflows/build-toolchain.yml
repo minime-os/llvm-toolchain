@@ -85,9 +85,10 @@ jobs:
             -DLLVM_DEFAULT_TARGET_TRIPLE="aarch64-buildroot-linux-musl" \
             -DLLVM_BUILD_LLVM_DYLIB=ON \
             -DLLVM_LINK_LLVM_DYLIB=ON \
+            -DLLVM_PARALLEL_LINK_JOBS=1 \
             -DLLVM_ENABLE_ASSERTIONS=OFF \
             -DLLVM_ENABLE_BINDINGS=OFF
-          ninja -C llvm-project/build-host install
+          ninja -j2 -C llvm-project/build-host install
 
       # Step 2: Build Host SPIRV-LLVM-Translator
       - name: Build Host SPIRV-LLVM-Translator
@@ -123,8 +124,8 @@ jobs:
             -DCMAKE_CROSSCOMPILING=True \
             -DCMAKE_SYSTEM_NAME=Linux \
             -DCMAKE_SYSTEM_PROCESSOR=AArch64 \
-            -DCMAKE_C_COMPILER=/opt/toolchain/bin/aarch64-linux-gcc \
-            -DCMAKE_CXX_COMPILER=/opt/toolchain/bin/aarch64-linux-g++ \
+            -DCMAKE_C_COMPILER=/opt/toolchain/bin/aarch64-buildroot-linux-musl-gcc \
+            -DCMAKE_CXX_COMPILER=/opt/toolchain/bin/aarch64-buildroot-linux-musl-g++ \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_SYSROOT=/opt/toolchain/aarch64-buildroot-linux-musl/sysroot \
@@ -135,13 +136,14 @@ jobs:
             -DLLVM_DEFAULT_TARGET_TRIPLE="aarch64-buildroot-linux-musl" \
             -DLLVM_BUILD_LLVM_DYLIB=ON \
             -DLLVM_LINK_LLVM_DYLIB=ON \
+            -DLLVM_PARALLEL_LINK_JOBS=1 \
             -DLLVM_ENABLE_ZLIB=OFF \
             -DLLVM_ENABLE_ZSTD=OFF \
             -DLLVM_ENABLE_TERMINFO=OFF \
             -DLLVM_ENABLE_LIBXML2=OFF \
             -DLLVM_ENABLE_ASSERTIONS=OFF \
             -DLLVM_ENABLE_BINDINGS=OFF
-          ninja -C llvm-project/build-target install
+          ninja -j2 -C llvm-project/build-target install
 
       # Step 5: Cross-Compile Target SPIRV-LLVM-Translator (installs libLLVMSPIRVLib.so to sysroot)
       - name: Cross-Compile Target SPIRV-LLVM-Translator
@@ -153,13 +155,13 @@ jobs:
             -DCMAKE_CROSSCOMPILING=True \
             -DCMAKE_SYSTEM_NAME=Linux \
             -DCMAKE_SYSTEM_PROCESSOR=AArch64 \
-            -DCMAKE_C_COMPILER=/opt/toolchain/bin/aarch64-linux-gcc \
-            -DCMAKE_CXX_COMPILER=/opt/toolchain/bin/aarch64-linux-g++ \
+            -DCMAKE_C_COMPILER=/opt/toolchain/bin/aarch64-buildroot-linux-musl-gcc \
+            -DCMAKE_CXX_COMPILER=/opt/toolchain/bin/aarch64-buildroot-linux-musl-g++ \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_SYSROOT=/opt/toolchain/aarch64-buildroot-linux-musl/sysroot \
             -DLLVM_DIR=/opt/toolchain/aarch64-buildroot-linux-musl/sysroot/usr/lib/cmake/llvm
-          ninja -C SPIRV-LLVM-Translator/build-target install
+          ninja -j2 -C SPIRV-LLVM-Translator/build-target install
 
       - name: Package SDK
         run: |
