@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       buildroot_version:
-        description: 'Buildroot Version (e.g. 2026.02.3)'
+        description: 'Buildroot Version (e.g. 2026.05)'
         required: true
-        default: '2026.02.3'
+        default: '2026.05'
       bootlin_version:
-        description: 'Bootlin Stable Version (e.g. 2026.02-1)'
+        description: 'Bootlin Stable Version (e.g. 2025.08-1)'
         required: true
-        default: '2026.02-1'
+        default: '2025.08-1'
       llvm_version:
         description: 'LLVM Version (e.g. 22.1.8)'
         required: true
@@ -53,9 +53,14 @@ jobs:
 
       - name: Download Bootlin Toolchain
         run: |
+          set -euo pipefail
+          BOOTLIN_VERSION="${{ github.event.inputs.bootlin_version }}"
+          : "${BOOTLIN_VERSION:?bootlin_version input is required}"
+          BOOTLIN_URL="https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--musl--stable-${BOOTLIN_VERSION}.tar.xz"
           sudo mkdir -p /opt/toolchain
           sudo chown runner:runner /opt/toolchain
-          curl -fsSL "https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--musl--stable-${{ github.event.inputs.bootlin_version }}.tar.xz" | tar -xJ --strip-components=1 -C /opt/toolchain
+          curl -fL --retry 3 --retry-delay 5 "$BOOTLIN_URL" -o /tmp/bootlin-toolchain.tar.xz
+          tar -xJf /tmp/bootlin-toolchain.tar.xz --strip-components=1 -C /opt/toolchain
 
       - name: Clone LLVM Project
         run: |

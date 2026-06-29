@@ -5,6 +5,10 @@ on:
     - cron: '0 1 * * *' # Every day at 04:00 GMT+3 (01:00 UTC)
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -12,24 +16,36 @@ jobs:
       - name: Fetch Latest Upstream Versions
         id: upstream
         run: |
-          # Fetch the latest stable Buildroot tag (excluding release candidates, looking for tags like 2026.02.3)
+          set -euo pipefail
+
+          # Fetch the latest stable Buildroot tag (excluding release candidates, looking for tags like 2026.05 or 2026.02.3)
           LATEST_BUILDROOT=$(curl -fsSL https://api.github.com/repos/buildroot/buildroot/tags | jq -r '.[].name' | grep -E '^[0-9]{4}\.[0-9]{2}(\.[0-9]+)?$' | head -n 1)
+          : "${LATEST_BUILDROOT:?Could not determine latest Buildroot tag}"
           echo "LATEST_BUILDROOT=$LATEST_BUILDROOT" >> $GITHUB_OUTPUT
           echo "Latest stable Buildroot tag: $LATEST_BUILDROOT"
 
-          # Fetch the latest stable Bootlin release version (stable-X.Y-Z)
-          LATEST_BOOTLIN=$(curl -fsSL https://toolchains.bootlin.com/releases.html | grep -oE "stable-[0-9]{4}\.[0-9]{2}-[0-9]+" | head -n 1 | sed 's/stable-//')
+          # Fetch the latest stable Bootlin aarch64/musl release from the tarball index.
+          # The old releases.html endpoint no longer exists.
+          BOOTLIN_TARBALLS_URL="https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/"
+          LATEST_BOOTLIN=$(curl -fsSL "$BOOTLIN_TARBALLS_URL" \
+            | grep -oE 'aarch64--musl--stable-[0-9]{4}\.[0-9]{2}-[0-9]+\.tar\.xz' \
+            | sed -E 's/^aarch64--musl--stable-//; s/\.tar\.xz$//' \
+            | sort -Vu \
+            | tail -n 1)
+          : "${LATEST_BOOTLIN:?Could not determine latest Bootlin stable aarch64/musl toolchain}"
           echo "LATEST_BOOTLIN=$LATEST_BOOTLIN" >> $GITHUB_OUTPUT
           echo "Latest stable Bootlin release: $LATEST_BOOTLIN"
 
           # Fetch the latest stable LLVM release version (looking for tags like llvmorg-22.1.8)
           LATEST_LLVM=$(curl -fsSL https://api.github.com/repos/llvm/llvm-project/releases | jq -r '.[].tag_name' | grep -E '^llvmorg-[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 | sed 's/llvmorg-//')
+          : "${LATEST_LLVM:?Could not determine latest LLVM release}"
           echo "LATEST_LLVM=$LATEST_LLVM" >> $GITHUB_OUTPUT
           echo "Latest stable LLVM version: $LATEST_LLVM"
 
           # Fetch the latest commit SHA of the matching SPIRV-LLVM-Translator release branch
           LLVM_MAJOR=$(echo "$LATEST_LLVM" | cut -d. -f1)
           LATEST_SPIRV_FULL_SHA=$(git ls-remote https://github.com/KhronosGroup/SPIRV-LLVM-Translator.git refs/heads/llvm_release_${LLVM_MAJOR}0 | cut -f1)
+          : "${LATEST_SPIRV_FULL_SHA:?Could not determine latest SPIRV-LLVM-Translator SHA}"
           LATEST_SPIRV_SHA=${LATEST_SPIRV_FULL_SHA:0:7}
           echo "LATEST_SPIRV_SHA=$LATEST_SPIRV_SHA" >> $GITHUB_OUTPUT
           echo "Latest stable SPIR-V translator SHA: $LATEST_SPIRV_SHA"
@@ -42,11 +58,11 @@ jobs:
           echo "Our latest release tag: $LATEST_OURS"
           
           # Parse the tag using regex (format: v<buildroot>-bootlin<bootlin>-llvm<llvm>-spirv<spirv>)
-          if [[ "$LATEST_OURS" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-bootlin([0-9]+\.[0-9]+-[0-9]+)-llvm([0-9]+\.[0-9]+\.[0-9]+)-spirv([a-f0-9]+)$ ]]; then
+          if [[ "$LATEST_OURS" =~ ^v([0-9]+\.[0-9]+(\.[0-9]+)?)-bootlin([0-9]+\.[0-9]+-[0-9]+)-llvm([0-9]+\.[0-9]+\.[0-9]+)-spirv([a-f0-9]+)$ ]]; then
             OUR_BUILDROOT="${BASH_REMATCH[1]}"
-            OUR_BOOTLIN="${BASH_REMATCH[2]}"
-            OUR_LLVM="${BASH_REMATCH[3]}"
-            OUR_SPIRV_SHA="${BASH_REMATCH[4]}"
+            OUR_BOOTLIN="${BASH_REMATCH[3]}"
+            OUR_LLVM="${BASH_REMATCH[4]}"
+            OUR_SPIRV_SHA="${BASH_REMATCH[5]}"
           else
             OUR_BUILDROOT="none"
             OUR_BOOTLIN="none"
